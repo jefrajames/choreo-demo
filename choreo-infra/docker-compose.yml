@@ -1,0 +1,102 @@
+version: '3'
+services:
+
+  zookeeper:
+    image: eventuateio/eventuate-zookeeper:0.16.0.RELEASE
+    ports:
+      - 2181:2181
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: eventuateio/eventuate-kafka:0.16.0.RELEASE
+    ports:
+      - 9092:9092
+      - 29092:29092
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_LISTENERS: LC://kafka:29092,LX://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: LC://kafka:29092,LX://${DOCKER_HOST_IP:-localhost}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: LC:PLAINTEXT,LX:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: LC
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: -Xmx192m
+
+  kafka-gui:
+    image: rsmnarts/kowl:latest
+    ports:
+      - 9088:8080
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:29092
+
+  db-holiday:
+    image: eventuateio/eventuate-tram-sagas-mysql:0.20.0.RELEASE
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw
+
+  db-trip:
+    image: eventuateio/eventuate-tram-sagas-mysql:0.20.0.RELEASE
+    ports:
+      - 3308:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw
+
+  cdc-holiday:
+    image: eventuateio/eventuate-cdc-service:0.14.0.RELEASE
+    ports:
+      - "9086:8080"
+    depends_on:
+      - db-holiday
+      - kafka
+      - zookeeper
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db-holiday/eventuate
+      SPRING_DATASOURCE_USERNAME: mysqluser
+      SPRING_DATASOURCE_PASSWORD: mysqlpw
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.jdbc.Driver
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+      EVENTUATELOCAL_CDC_DB_USER_NAME: root
+      EVENTUATELOCAL_CDC_DB_PASSWORD: rootpassword
+      # Dissociate Holiday & Trip CDCs for Zookeeper election
+      EVENTUATELOCAL_CDC_LEADERSHIP_LOCK_PATH : /eventuatelocal/cdc/leader/1
+      EVENTUATELOCAL_CDC_READER_NAME: HolidayMysqlReader
+      EVENTUATELOCAL_CDC_MYSQL_BINLOG_CLIENT_UNIQUE_ID: 1234567890
+      EVENTUATELOCAL_CDC_READ_OLD_DEBEZIUM_DB_OFFSET_STORAGE_TOPIC: "false"
+      EVENTUATE_OUTBOX_ID: 1
+      JAVA_OPTS: -Xmx64m
+
+  cdc-trip:
+    image: eventuateio/eventuate-cdc-service:0.14.0.RELEASE
+    ports:
+      - "9084:8080"
+    depends_on:
+      - db-trip
+      - kafka
+      - zookeeper
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db-trip/eventuate
+      SPRING_DATASOURCE_USERNAME: mysqluser
+      SPRING_DATASOURCE_PASSWORD: mysqlpw
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.jdbc.Driver
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+      EVENTUATELOCAL_CDC_DB_USER_NAME: root
+      EVENTUATELOCAL_CDC_DB_PASSWORD: rootpassword
+      # Dissociate Holiday & Trip CDCs for Zookeeper election
+      EVENTUATELOCAL_CDC_LEADERSHIP_LOCK_PATH : /eventuatelocal/cdc/leader/2
+      EVENTUATELOCAL_CDC_READER_NAME: TripMysqlReader
+      EVENTUATELOCAL_CDC_MYSQL_BINLOG_CLIENT_UNIQUE_ID: 2345678901
+      EVENTUATELOCAL_CDC_READ_OLD_DEBEZIUM_DB_OFFSET_STORAGE_TOPIC: "false"
+      EVENTUATE_OUTBOX_ID: 5
+      JAVA_OPTS: -Xmx64m

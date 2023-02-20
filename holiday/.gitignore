@@ -1,0 +1,5 @@
+/.DS_Store
+/.vscode
+/spy.log
+/src/main/resources/application-mysql.properties
+/target
